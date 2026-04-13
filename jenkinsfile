@@ -1,5 +1,5 @@
 pipeline {
-    agent any 
+    agent any
 
     options {
         timestamps()
@@ -11,7 +11,7 @@ pipeline {
 
     stages {
 
-        //  Skip unwanted branches (like main)
+        // 🔴 Ignore unwanted branches like main
         stage('Check Branch') {
             when {
                 not {
@@ -31,7 +31,6 @@ pipeline {
             }
         }
 
-        //  Jenkins already does checkout automatically → no need git step
         stage('Checkout') {
             steps {
                 echo "Using branch: ${env.BRANCH_NAME}"
@@ -40,37 +39,54 @@ pipeline {
 
         stage('Terraform Init') {
             steps {
-                sh 'terraform init'
+                dir('terra-workspace') {
+                    sh 'terraform init'
+                }
             }
         }
 
         stage('Select Workspace') {
             steps {
-                script {
-                    def ws = env.BRANCH_NAME
-                    sh """
-                    terraform workspace list | grep ${ws} || terraform workspace new ${ws}
-                    terraform workspace select ${ws}
-                    """
+                dir('terra-workspace') {
+                    script {
+                        def ws = env.BRANCH_NAME
+                        sh """
+                        terraform workspace list | grep ${ws} || terraform workspace new ${ws}
+                        terraform workspace select ${ws}
+                        """
+                    }
                 }
             }
         }
 
         stage('Terraform Validate') {
             steps {
-                sh 'terraform validate'
+                dir('terra-workspace') {
+                    sh 'terraform validate'
+                }
             }
         }
 
         stage('Terraform Plan') {
             steps {
-                sh """
-                terraform plan -var-file=${env.BRANCH_NAME}.tfvars -out=tfplan
-                """
+                dir('terra-workspace') {
+                    sh """
+                    terraform plan -var-file=${env.BRANCH_NAME}.tfvars -out=tfplan
+                    """
+                }
             }
         }
 
-        //  Proper condition (FIXED)
+        // 🔴 Approval before PROD
+        stage('Approval for PROD') {
+            when {
+                branch 'prod'
+            }
+            steps {
+                input message: "Approve Production Deployment?"
+            }
+        }
+
         stage('Terraform Apply') {
             when {
                 anyOf {
@@ -80,29 +96,21 @@ pipeline {
                 }
             }
             steps {
-                sh """
-                terraform apply -auto-approve tfplan
-                """
-            }
-        }
-
-        //  Optional (Best practice)
-        stage('Approval for PROD') {
-            when {
-                branch 'prod'
-            }
-            steps {
-                input message: "Approve Production Deployment?"
+                dir('terra-workspace') {
+                    sh """
+                    terraform apply -auto-approve tfplan
+                    """
+                }
             }
         }
     }
 
     post {
         success {
-            echo " Deployment successful"
+            echo "✅ Deployment successful"
         }
         failure {
-            echo " Pipeline failed"
+            echo "❌ Pipeline failed"
         }
     }
 }
