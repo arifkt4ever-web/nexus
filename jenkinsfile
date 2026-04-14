@@ -12,7 +12,7 @@ pipeline {
 
     stages {
 
-        // 🔴 Ignore unwanted branches
+        //  Ignore unwanted branches
         stage('Check Branch') {
             when {
                 not {
@@ -35,14 +35,14 @@ pipeline {
             }
         }
 
-        // 🔹 Terraform Init
+        //  Terraform Init
         stage('Terraform Init') {
             steps {
                 sh 'terraform init'
             }
         }
 
-        // 🔹 Workspace Selection
+        //  Workspace Selection
         stage('Select Workspace') {
             steps {
                 script {
@@ -55,14 +55,14 @@ pipeline {
             }
         }
 
-        // 🔹 Validate
+        //  Validate
         stage('Terraform Validate') {
             steps {
                 sh 'terraform validate'
             }
         }
 
-        // 🔹 Plan
+        //  Plan
         stage('Terraform Plan') {
             steps {
                 sh """
@@ -71,7 +71,7 @@ pipeline {
             }
         }
 
-        // 🔥 Upload tfplan to Nexus (FIXED + DEBUG)
+        //  Upload tfplan to Nexus (FIXED + DEBUG)
         stage('Upload tfplan to Nexus') {
             steps {
                 withCredentials([usernamePassword(
@@ -89,7 +89,7 @@ pipeline {
                     ls -l
 
                     echo "Checking tfplan file:"
-                    ls -l tfplan || { echo "❌ tfplan not found"; exit 1; }
+                    ls -l tfplan || { echo " tfplan not found"; exit 1; }
 
                     echo "Uploading tfplan to Nexus..."
 
@@ -103,7 +103,7 @@ pipeline {
             }
         }
 
-        // 🔴 Approval for PROD
+        //  Approval for PROD
         stage('Approval for PROD') {
             when {
                 branch 'prod'
@@ -113,7 +113,7 @@ pipeline {
             }
         }
 
-        // 🔹 Apply
+        //  Apply
         stage('Terraform Apply') {
             when {
                 anyOf {
@@ -130,10 +130,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ Terraform + Nexus upload successful"
+            echo " Terraform + Nexus upload successful"
         }
         failure {
-            echo "❌ Pipeline failed"
+            echo " Pipeline failed"
         }
     }
 }
