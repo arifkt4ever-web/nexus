@@ -9,31 +9,10 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout Code') {
             steps {
                 git branch: "${BRANCH}", url: "${GIT_REPO}"
-            }
-        }
-
-        stage('Terraform Init') {
-            steps {
-                sh 'terraform init'
-            }
-        }
-
-        stage('Plan & Upload') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'nexus-id',
-                    usernameVariable: 'USER',
-                    passwordVariable: 'PASS'
-                )]) {
-                    sh '''
-                    terraform plan -out=$TF_PLAN_NAME
-                    echo "Uploading $TF_PLAN_NAME to Nexus"
-                    curl -u $USER:$PASS --upload-file $TF_PLAN_NAME $NEXUS_URL/$TF_PLAN_NAME
-                    '''
-                }
             }
         }
 
@@ -49,6 +28,18 @@ pipeline {
                     curl -u $USER:$PASS -O $NEXUS_URL/$TF_PLAN_NAME
                     '''
                 }
+            }
+        }
+
+        stage('Verify') {
+            steps {
+                sh 'ls -l'
+            }
+        }
+
+        stage('Terraform Init') {
+            steps {
+                sh 'terraform init'
             }
         }
 
