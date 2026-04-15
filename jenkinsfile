@@ -1,0 +1,129 @@
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+    }
+
+    environment {
+        AWS_REGION = "ap-south-1"
+        NEXUS_URL = "http://192.168.228.128:8081/repository/terraform-artifacts/"
+    }
+
+    stages {
+
+        // 🔴 Ignore unwanted branches
+        stage('Check Branch') {
+            when {
+                not {
+                    anyOf {
+                        branch 'dev'
+                        branch 'qa'
+                        branch 'prod'
+                    }
+                }
+            }
+            steps {
+                echo "Skipping branch: ${env.BRANCH_NAME}"
+                error("Stopping pipeline for non-target branch")
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                echo "Using branch: ${env.BRANCH_NAME}"
+            }
+        }
+
+        // 🔹 Terraform Init
+        stage('Terraform Init') {
+            steps {
+                sh 'terraform init'
+            }
+        }
+
+        // 🔹 Workspace Selection
+        stage('Select Workspace') {
+            steps {
+                script {
+                    def ws = env.BRANCH_NAME
+                    sh """
+                    terraform workspace list | grep ${ws} || terraform workspace new ${ws}
+                    terraform workspace select ${ws}
+                    """
+                }
+            }
+        }
+
+        // 🔹 Validate
+        stage('Terraform Validate') {
+            steps {
+                sh 'terraform validate'
+            }
+        }
+
+        // 🔹 Plan
+        stage('Terraform Plan') {
+            steps {
+                sh """
+                terraform plan -var-file=${env.BRANCH_NAME}.tfvars -out=tfplan
+                """
+            }
+        }
+
+        // 🔥 Upload tfplan to Nexus
+        stage('Upload tfplan to Nexus') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'nexus-id',
+                    usernameVariable: 'NEXUS_USER',
+                    passwordVariable: 'NEXUS_PASS'
+                )]) {
+                    sh """
+                    echo "Uploading tfplan to Nexus..."
+
+                    # Debug - check file exists
+                    ls -l tfplan
+
+                    curl -v -u $NEXUS_USER:$NEXUS_PASS \
+                    --upload-file tfplan \
+                    ${NEXUS_URL}/tfplan-${env.BRANCH_NAME}-${env.BUILD_NUMBER}
+                    """
+                }
+            }
+        }
+
+        // 🔴 Approval for PROD
+        stage('Approval for PROD') {
+            when {
+                branch 'prod'
+            }
+            steps {
+                input message: "Approve Production Deployment?"
+            }
+        }
+
+        // 🔹 Apply
+        stage('Terraform Apply') {
+            when {
+                anyOf {
+                    branch 'dev'
+                    branch 'qa'
+                    branch 'prod'
+                }
+            }
+            steps {
+                sh "terraform apply -auto-approve tfplan"
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Terraform + Nexus upload successful"
+        }
+        failure {
+            echo "❌ Pipeline failed"
+        }
+    }
+}
