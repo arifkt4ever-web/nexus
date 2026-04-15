@@ -1,37 +1,66 @@
 pipeline {
     agent any
 
-    parameters {
-        string(name: 'TF_PLAN_NAME', defaultValue: 'tfplan-dev-17', description: 'Enter tfplan file name from Nexus')
+    environment {
+        GIT_REPO = "https://github.com/latheef-mvmc/jenkins-terraform.git"
+        NEXUS_URL = "http://192.168.19.129:8081/repository/terraformartifacts"
+        BRANCH = "dev"
     }
 
-    environment {
-        GIT_REPO = "https://github.com/latheef-devops/terraform-project.git"
-        NEXUS_URL = "http://192.168.19.129:8081/repository/terraformartifacts"
-        NEXUS_USER = "admin"
-        NEXUS_PASS = "ladsoft@123"
+    options {
+        disableConcurrentBuilds()
     }
 
     stages {
 
         stage('Checkout Code') {
             steps {
-                git branch: "dev", url: "${GIT_REPO}"
+                git branch: "${BRANCH}", url: "${GIT_REPO}"
             }
         }
 
-        stage('Download tfplan from Nexus') {
+        stage('Find Latest tfplan from Nexus') {
             steps {
-                sh """
-                echo "Downloading ${params.TF_PLAN_NAME}"
-                curl -u ${NEXUS_USER}:${NEXUS_PASS} -O ${NEXUS_URL}/${params.TF_PLAN_NAME}
-                """
+                withCredentials([usernamePassword(
+                    credentialsId: 'nexus-creds',
+                    usernameVariable: 'USER',
+                    passwordVariable: 'PASS'
+                )]) {
+                    script {
+                        def latestPlan = sh(
+                            script: """
+                            curl -s -u $USER:$PASS ${NEXUS_URL}/ | \
+                            grep -o 'tfplan-${BRANCH}-[0-9]*' | \
+                            sort -V | tail -n 1
+                            """,
+                            returnStdout: true
+                        ).trim()
+
+                        env.TF_PLAN_NAME = latestPlan
+                        echo "Latest plan: ${env.TF_PLAN_NAME}"
+                    }
+                }
             }
         }
 
-        stage('Verify Plan') {
+        stage('Download tfplan') {
             steps {
-                sh "ls -l ${params.TF_PLAN_NAME}"
+                withCredentials([usernamePassword(
+                    credentialsId: 'nexus-cred',
+                    usernameVariable: 'USER',
+                    passwordVariable: 'PASS'
+                )]) {
+                    sh """
+                    echo "Downloading ${TF_PLAN_NAME}"
+                    curl -u $USER:$PASS -O ${NEXUS_URL}/${TF_PLAN_NAME}
+                    """
+                }
+            }
+        }
+
+        stage('Verify tfplan') {
+            steps {
+                sh "ls -l ${TF_PLAN_NAME}"
             }
         }
 
@@ -43,17 +72,17 @@ pipeline {
 
         stage('Apply Terraform Plan') {
             steps {
-                sh "terraform apply -auto-approve ${params.TF_PLAN_NAME}"
+                sh "terraform apply -auto-approve ${TF_PLAN_NAME}"
             }
         }
     }
 
     post {
         success {
-            echo "✅ Applied ${params.TF_PLAN_NAME}"
+            echo "✅ Applied ${TF_PLAN_NAME}"
         }
         failure {
-            echo "❌ Failed for ${params.TF_PLAN_NAME}"
+            echo "❌ Apply failed"
         }
     }
 }
