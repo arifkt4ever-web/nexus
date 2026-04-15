@@ -22,7 +22,7 @@ pipeline {
         stage('Find Latest tfplan from Nexus') {
             steps {
                 withCredentials([usernamePassword(
-                    credentialsId: 'nexus-creds',
+                    credentialsId: 'nexus-cred',
                     usernameVariable: 'USER',
                     passwordVariable: 'PASS'
                 )]) {
