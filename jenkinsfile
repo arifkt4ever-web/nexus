@@ -9,7 +9,7 @@ pipeline {
         GIT_REPO = "https://github.com/latheef-devops/terraform-project.git"
         NEXUS_URL = "http://192.168.19.129:8081/repository/terraformartifacts"
         NEXUS_USER = "admin"
-        NEXUS_PASS = "admin123"
+        NEXUS_PASS = "ladsoft@123"
     }
 
     stages {
