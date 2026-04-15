@@ -2,9 +2,9 @@ pipeline {
     agent any
 
     environment {
-        GIT_REPO = "https://github.com/latheef-mvmc/jenkins-terraform.git"
+        GIT_REPO = "https://github.com/arifkt4ever-web/nexus.git"
         BRANCH = "dev"
-        NEXUS_URL = "http://192.168.19.129:8081/repository/terraformartifacts"
+        NEXUS_URL = "http://192.168.228.128:8081/repository/terraform-artifacts/"
         TF_PLAN_NAME = "tfplan-dev-17"
     }
 
@@ -19,7 +19,7 @@ pipeline {
         stage('Download tfplan') {
             steps {
                 withCredentials([usernamePassword(
-                    credentialsId: 'nexus-cred',
+                    credentialsId: 'nexus-id',
                     usernameVariable: 'USER',
                     passwordVariable: 'PASS'
                 )]) {
