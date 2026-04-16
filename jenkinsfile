@@ -1,61 +1,139 @@
 pipeline {
     agent any
 
+    options {
+        timestamps()
+    }
+
     environment {
-        GIT_REPO = "https://github.com/arifkt4ever-web/nexus.git"
-        BRANCH = "dev"
+        AWS_REGION = "ap-south-1"
         NEXUS_URL = "http://192.168.228.128:8081/repository/terraform-artifacts/"
-        TF_PLAN_NAME = "tfplan-dev-17"
     }
 
     stages {
 
-        stage('Checkout Code') {
-            steps {
-                git branch: "${BRANCH}", url: "${GIT_REPO}"
-            }
-        }
-
-        stage('Download tfplan') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'nexus-id',
-                    usernameVariable: 'USER',
-                    passwordVariable: 'PASS'
-                )]) {
-                    sh '''
-                    echo "Downloading $TF_PLAN_NAME"
-                    curl -u $USER:$PASS -O $NEXUS_URL/$TF_PLAN_NAME
-                    '''
+        //  Ignore unwanted branches
+        stage('Check Branch') {
+            when {
+                not {
+                    anyOf {
+                        branch 'dev'
+                        branch 'qa'
+                        branch 'prod'
+                    }
                 }
             }
-        }
-
-        stage('Verify') {
             steps {
-                sh 'ls -l'
+                echo "Skipping branch: ${env.BRANCH_NAME}"
+                error("Stopping pipeline for non-target branch")
             }
         }
 
+        stage('Checkout') {
+            steps {
+                echo "Using branch: ${env.BRANCH_NAME}"
+            }
+        }
+
+        //  Terraform Init
         stage('Terraform Init') {
             steps {
                 sh 'terraform init'
             }
         }
 
-        stage('Apply') {
+        //  Workspace Selection
+        stage('Select Workspace') {
             steps {
-                sh 'terraform apply -auto-approve $TF_PLAN_NAME'
+                script {
+                    def ws = env.BRANCH_NAME
+                    sh """
+                    terraform workspace list | grep ${ws} || terraform workspace new ${ws}
+                    terraform workspace select ${ws}
+                    """
+                }
+            }
+        }
+
+        //  Validate
+        stage('Terraform Validate') {
+            steps {
+                sh 'terraform validate'
+            }
+        }
+
+        //  Plan
+        stage('Terraform Plan') {
+            steps {
+                sh """
+                terraform plan -var-file=${env.BRANCH_NAME}.tfvars -out=tfplan
+                """
+            }
+        }
+
+        //  Upload tfplan to Nexus (FIXED + DEBUG)
+        stage('Upload tfplan to Nexus') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'nexus-id',
+                    usernameVariable: 'NEXUS_USER',
+                    passwordVariable: 'NEXUS_PASS'
+                )]) {
+                    sh '''
+                    echo "===== Upload Stage START ====="
+
+                    echo "Current directory:"
+                    pwd
+
+                    echo "Listing all files:"
+                    ls -l
+
+                    echo "Checking tfplan file:"
+                    ls -l tfplan || { echo " tfplan not found"; exit 1; }
+
+                    echo "Uploading tfplan to Nexus..."
+
+                    curl -v -u $NEXUS_USER:$NEXUS_PASS \
+                    --upload-file tfplan \
+                    http://192.168.228.128:8081/repository/terraformartifacts/tfplan-${BRANCH_NAME}-${BUILD_NUMBER}
+
+                    echo "===== Upload Stage END ====="
+                    '''
+                }
+            }
+        }
+
+        //  Approval for PROD
+        stage('Approval for PROD') {
+            when {
+                branch 'prod'
+            }
+            steps {
+                input message: "Approve Production Deployment?"
+            }
+        }
+
+        //  Apply
+        stage('Terraform Apply') {
+            when {
+                anyOf {
+                    branch 'dev'
+                    branch 'qa'
+                    branch 'prod'
+                }
+            }
+            steps {
+                sh "terraform apply -auto-approve tfplan"
             }
         }
     }
 
     post {
         success {
-            echo "✅ Apply completed successfully"
+            echo " Terraform + Nexus upload successful"
         }
         failure {
-            echo "❌ Apply failed"
+            echo " Pipeline failed"
         }
     }
 }
